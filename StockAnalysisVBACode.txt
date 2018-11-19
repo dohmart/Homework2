@@ -1,0 +1,142 @@
+Sub analyze_all_sheets()
+  Dim ws_count As Integer
+  Dim i As Integer
+  ws_count = ActiveWorkbook.Worksheets.Count
+  MsgBox ("Processing " & ws_count & " worksheets")
+  For i = 1 To ws_count
+    MsgBox ("Activating sheet " & i)
+    Sheets(i).Activate
+    stock_price_analysis
+  Next i
+End Sub
+
+  
+  
+  ' Error handling note - this code assumes that the ticker values are
+  ' already grouped by ticker. It would probably be better to validate this
+  '
+  ' Another assumption - that the dates are in sequential order. Technically should be verified
+  
+  Private Sub stock_price_analysis()
+  Const firstrow = 2
+  Const tickercol = 1
+  Const opencol = 3
+  Const closecol = 6
+  Const volcol = 7
+  Const firstoutcol = 9
+
+  ' Variables to be used to collect key information
+  Dim totalvol As Double
+  Dim startopen, stopopen, startclose, stopclose As Double
+  Dim yrchange, yrpctchange As Double
+  Dim maxincrease, maxdecrease As Double
+  Dim maxvolume As Double
+  ' Really should use some kind of structured variable here, instead of separate
+  ' variable names, but would need to look up how to do that in VBA
+  Dim maxiticker, maxdticker, maxvticker As String
+  Dim lastrow As Long
+
+  Dim currentticker As String
+  Dim currentoutputrow As Integer
+
+  ' Initialize variables
+  totalvol = 0
+  maxincrease = 0
+  maxdecrease = 0
+  maxvolume = 0
+  
+  ' Initialize the area to be used for output
+  Call init_output_fields(firstoutcol)
+  
+  lastrow = Cells(Rows.Count, tickercol).End(xlUp).Row
+
+  ' If we get the initial ticker and values before starting the loop, we can update ticker
+  ' string only when it changes easily enough
+  currentticker = Cells(firstrow, 1).Value
+  startopen = Cells(firstrow, opencol).Value
+  startclose = Cells(firstrow, closecol).Value
+  currentoutputrow = firstrow
+  For i = firstrow To (lastrow + 1)                                    ' How dangerous is this????? OK if not over 1024K rows, I guess
+    If (StrComp(currentticker, Cells(i, tickercol).Value) = 0) Then    ' Same ticker, increment volume
+      totalvol = totalvol + Cells(i, volcol).Value
+      stopopen = Cells(i, opencol).Value                          ' Must record every row in stop, since we do not know which is last until ticker changes
+      stopclose = Cells(i, closecol).Value
+    Else                                                    ' New ticker, do ticker summaries
+      yrchange = stopclose - startopen                      ' Might need to be startclose, not clear
+      If (startopen > 0) Then
+        yrpctchange = yrchange / startopen                    ' Might need to be startclose, not clear
+      Else
+        yrpctchange = 0
+      End If
+      Call output_ticker_summary(firstoutcol, currentoutputrow, currentticker, yrchange, yrpctchange, totalvol)
+      ' Now collect the super-statistics requested
+      If (yrchange > maxincrease) Then                      ' Record the largest of yrchange values
+        maxincrease = yrpctchange
+        maxiticker = currentticker
+      End If
+      If (yrchange < maxdecrease) Then                      ' Record the smallest of yrchange values
+        maxdecrease = yrpctchange
+        maxdticker = currentticker
+      End If
+      If (totalvol > maxvolume) Then                        ' Record largest volume
+        maxvolume = totalvol
+        maxvticker = currentticker
+      End If
+              
+      ' Now update various variables for starting summaries of next ticker
+      currentticker = Cells(i, tickercol)
+      startopen = Cells(i, opencol).Value
+      startclose = Cells(i, closecol).Value
+      totalvol = Cells(i, volcol).Value
+      ' Increment the row counter
+      currentoutputrow = currentoutputrow + 1
+    End If
+  Next i
+  Call output_super_statistics(maxincrease, maxiticker, maxdecrease, maxdticker, maxvolume, maxvticker)
+End Sub
+
+
+Private Sub init_output_fields(firstoutcol As Integer)
+  ' Initialize the area to be used for output
+  For i = firstoutcol To firstoutcol + 3
+    Columns(i).ClearContents
+  Next i
+  
+  ' Add headers to output columns
+  Cells(1, firstoutcol).Value = "Ticker"
+  Cells(1, firstoutcol + 1).Value = "Yearly Change"
+  Cells(1, firstoutcol + 2).Value = "Percent Change"
+  Cells(1, firstoutcol + 3).Value = "Total Stock Volume"
+  ' Format percentage column
+  Cells(1, firstcoutcol + 2).NumberFormat = "0.00%"
+End Sub
+
+Private Sub output_ticker_summary(fcol As Integer, currrow As Integer, tckr As String, yrchg, pctchg As Double, totvol As Double)
+  Cells(currrow, fcol).Value = tckr
+  Cells(currrow, fcol + 1).Value = yrchg
+  Cells(currrow, fcol + 2).Value = pctchg
+  Cells(currrow, fcol + 3).Value = totvol
+  
+  If (yrchg > 0) Then
+    Cells(currrow, fcol + 1).Interior.ColorIndex = 43
+  ElseIf (yrchg < 0) Then
+    Cells(currrow, fcol + 1).Interior.ColorIndex = 3
+  End If
+End Sub
+
+Sub output_super_statistics(maxincrease, maxiticker, maxdecrease, maxdticker, maxvolume, maxvticker)
+  Range("N2").Value = "Greatest % Increase"
+  Range("N3").Value = "Greatest % Decrease"
+  Range("N4").Value = "Greatest Total Volume"
+  Range("O1").Value = "Ticker"
+  Range("P1").Value = "Value"
+  Range("O2").Value = maxiticker
+  Range("P2").Value = maxincrease
+  Range("P2").NumberFormat = "0.00%"
+  Range("O3").Value = maxdticker
+  Range("P3").Value = maxdecrease
+  Range("P3").NumberFormat = "0.00%"
+  Range("O4").Value = maxvticker
+  Range("P4").Value = maxvolume
+End Sub
+
